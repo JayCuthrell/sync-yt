@@ -2,4 +2,5 @@ yt-dlp
 yt-dlp-ejs
 feedparser
 requests
-pydub
+#pydub
+#pyaudioop

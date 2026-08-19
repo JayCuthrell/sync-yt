@@ -5,7 +5,6 @@ import os
 import email.utils
 import time
 import argparse
-from pydub import AudioSegment
 
 # Use the ACTUAL webpage URL for your channel or playlist, NOT the XML feed URL
 YOUTUBE_URL = "https://www.youtube.com/playlist?list=PLbyE_u-MMuTvTa3AYInWSZwcDTw6nL-fR"
@@ -73,19 +72,26 @@ for entry in entries:
     else:
         print(f"Audio for {video_id} already exists. Skipping download.")
 
-        # Ensure the audio matches our reference dynamics and overwrite the file
-        REFERENCE_FILE = "reference_podcast.mp3" # Update with your actual reference file path
-        if os.path.exists(REFERENCE_FILE) and os.path.exists(audio_path):
-            print(f"Applying dynamic volume matching to {audio_filename}...")
-            ref_audio = AudioSegment.from_file(REFERENCE_FILE)
-            current_audio = AudioSegment.from_file(audio_path)
-            
-            # Calculate difference and compress
-            gain_adjustment = ref_audio.dBFS - current_audio.dBFS
-            optimized_audio = current_audio.apply_gain(gain_adjustment).compress_dynamic_range()
+    # Apply FFmpeg loudnorm filter if the flag is passed
+    if args.optimize_audio and os.path.exists(audio_path):
+        print(f"Applying broadcast volume normalization to {audio_filename}...")
+        temp_out = f"{audio_path}.tmp.mp3"
+        
+        try:
+            # FFmpeg loudnorm filter applies compression and standardizes to -16 LUFS
+            subprocess.run([
+                "ffmpeg", "-y", "-i", audio_path,
+                "-af", "loudnorm=I=-16:LRA=11:TP=-1.5",
+                "-b:a", "192k",
+                temp_out
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             
             # Overwrite the existing MP3 without changing its name
-            optimized_audio.export(audio_path, format="mp3", bitrate="192k")
+            os.replace(temp_out, audio_path)
+        except subprocess.CalledProcessError:
+            print(f"Failed to optimize {audio_filename}. Skipping optimization for this file.")
+            if os.path.exists(temp_out):
+                os.remove(temp_out)
     
     # Apple Podcasts requires an accurate file length in bytes
     file_size = os.path.getsize(audio_path) if os.path.exists(audio_path) else 0
